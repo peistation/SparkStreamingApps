@@ -1,5 +1,7 @@
 package sparkapps.ctakes
 
+import scala.io.Source
+import java.io.FileWriter
 import org.apache.ctakes.clinicalpipeline.ClinicalPipelineFactory.{RemoveEnclosedLookupWindows, CopyNPChunksToLookupWindowAnnotations}
 import org.apache.ctakes.contexttokenizer.ae.ContextDependentTokenizerAnnotator
 import org.apache.ctakes.core.ae.{TokenizerAnnotatorPTB, SimpleSegmentAnnotator}
@@ -44,7 +46,10 @@ import org.apache.ctakes.dictionary.lookup2.ae.JCasTermAnnotator
  */
 object CtakesTermAnalyzer {
 
-  /**
+    val aed:AnalysisEngineDescription= getDefaultPipeline();
+    val ae:AnalysisEngine= AnalysisEngineFactory.createEngine(aed);
+
+/**
    * Simple pipeline.
    */
   def getDefaultPipeline():AnalysisEngineDescription  = {
@@ -110,15 +115,30 @@ AnalysisEngineFactory.createEngineDescription(classOf[DictionaryLookupAnnotator]
 
 
 def analyze(text:String):Any = {
-    val aed:AnalysisEngineDescription= getDefaultPipeline();
-    val jcas:JCas = JCasFactory.createJCas();
-    jcas.setDocumentText(text);
-    SimplePipeline.runPipeline(jcas, aed);
-    val iter = JCasUtil.select(jcas,classOf[IdentifiedAnnotation]).iterator()
+    val jcas:JCas = ae.newJCas();
+	var lines  = text.split('|');
+	var id="";
+	var datetm="";
+	var line=text;
+	if(lines.length >=3) {
+	id = lines(0);
+	datetm = lines(1);
+	line = lines(2);
+	}
+    System.out.println(line); 
+
+if(id.length == 18) {
+//temp check on id's lenght in case splitting was off
+	try {
+    jcas.setDocumentText(line);
+    ae.process(jcas);
+    val iter = JCasUtil.select(jcas,classOf[IdentifiedAnnotation]).iterator();
     while(iter.hasNext)
     {
+      val sb = new StringBuffer();
       val entity = iter.next();
       //for demonstration purposes , we print all this stuff.
+	//System.out.print("---"+entity.getCoveredText + " " + "Polarity" + entity.getPolarity  + "Semantic Type:" + entity.getTypeID);
 	val mentions = entity.getOntologyConceptArr;
 	var i = 0;
 	if (mentions!=null && mentions.size > 0) {
@@ -129,17 +149,32 @@ def analyze(text:String):Any = {
 	     uniqueCuis += concept.getCui;
 	  }
 	 }
-	 uniqueCuis.foreach(println);
+	 //uniqueCuis.foreach(println);
+         for(cui <- uniqueCuis) {
+		sb.append(id + "|" + datetm + "|" + cui + "|" + entity.getTypeID + "|" + entity.getPolarity + "|" + entity.getCoveredText + "\n" );
+		}	 
         }
-	System.out.print("---"+entity.getCoveredText + " " + entity.getPolarity+"---");
-	System.out.print(entity);
-    }
+	System.out.print(sb.toString());
+			val fw = new FileWriter("tweetcuis.txt", true)
+			try {
+  				fw.write(sb.toString());
+			}
+			finally fw.close() ;
+    		}
     //return the iterator.
-    JCasUtil.select(jcas,classOf[BaseToken]).iterator()
+    //JCasUtil.select(jcas,classOf[BaseToken]).iterator()
 	jcas.reset();
+	}
+catch  {
+//Swallow and continue
+case e: Exception => e.printStackTrace
+}
+}
   }
 
   def main(args: Array[String]): Unit = {
-    System.out.println(analyze("The patient did not have diabetes.  He took 50mg of aspirin twice daily for his pain. Medications include Synthroid, Crestor, Nexium, Ventolin HFA, Advair Diskus, Diovan, Lantus Solostar, Cymbalta, Vyvanse, Lyrica.  His blood sugare and glucose levels are off the charts.  Symptoms include naseau and light headedness."))
+	for(line <- Source.fromFile("tweets.txt").getLines()) {
+  	analyze(line);
+	}
   }
 }
